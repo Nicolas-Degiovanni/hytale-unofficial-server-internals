@@ -1,0 +1,91 @@
+---
+description: Architectural reference for FunctionCodec
+---
+
+# FunctionCodec
+
+**Package:** com.hypixel.hytale.codec.function
+**Type:** Transient Utility
+
+## Definition
+
+```java
+// Signature
+@Deprecated
+public class FunctionCodec<T, R> implements Codec<R> {
+```
+
+## Architecture & Concepts
+
+The FunctionCodec is a foundational component in the codec system that embodies the **Decorator Pattern**. Its primary role is to adapt an existing `Codec<T>` to create a new `Codec<R>` by applying transformation functions, without requiring the implementation of a completely new codec from scratch.
+
+This class acts as a bridge, separating the low-level serialization format (handled by the wrapped inner `codec`) from the high-level application-specific type representation. For example, it can adapt a `Codec<String>` to a `Codec<UserID>` by providing functions that convert a UserID object to and from its String representation.
+
+**WARNING:** This class is marked as **Deprecated**. Its usage in new systems is strongly discouraged. It likely represents an older pattern that has been superseded by more advanced, schema-aware mechanisms within the engine. New development should investigate alternatives like schema-driven derivation or annotation-based codec generation.
+
+## Lifecycle & Ownership
+
+-   **Creation:** An instance is created directly via its public constructor: `new FunctionCodec(...)`. It is typically instantiated during the codec registration phase of an application or module, where base codecs are adapted for specific domain types.
+-   **Scope:** The lifecycle of a FunctionCodec instance is transient and local. It is not a managed singleton. Its lifetime is bound to the scope of the `CodecRegistry` or component that holds a reference to it.
+-   **Destruction:** The object is managed by the Java Garbage Collector. It holds no native resources and requires no explicit cleanup. It is eligible for garbage collection as soon as it is no longer referenced.
+
+## Internal State & Concurrency
+
+-   **State:** The FunctionCodec is **Immutable**. Its internal fields—the wrapped codec and the two transformation functions—are `final` and are set exclusively at construction time. It does not cache any data or maintain any mutable state between calls.
+
+-   **Thread Safety:** This class is conditionally thread-safe. Its own logic contains no locks or mutable state. Therefore, its thread safety is entirely dependent on the components it is constructed with:
+    1.  The wrapped `Codec<T>` instance must be thread-safe.
+    2.  The provided `encode` and `decode` functions must be pure, stateless, and thread-safe.
+
+    If these conditions are met, an instance of FunctionCodec can be safely shared and used across multiple threads. Standard engine codecs and simple lambda transformations generally satisfy these requirements.
+
+## API Surface
+
+| Symbol | Type | Complexity | Description |
+| :--- | :--- | :--- | :--- |
+| FunctionCodec(codec, decode, encode) | constructor | O(1) | Constructs a new codec that wraps an existing codec with transformation functions. |
+| decode(bsonValue, extraInfo) | R | O(N) | Decodes a BsonValue to type T using the inner codec, then applies the decode function to produce type R. Throws IllegalArgumentException if the function returns null. |
+| encode(r, extraInfo) | BsonValue | O(M) | Applies the encode function to convert type R to type T, then encodes T to a BsonValue using the inner codec. |
+| toSchema(context) | Schema | O(S) | **Delegates entirely.** Generates a schema by calling `toSchema` on the wrapped inner codec. The transformation functions are not represented in the schema. |
+
+*N = size of BSON data, M = complexity of input object, S = complexity of inner codec's schema generation*
+
+## Integration Patterns
+
+### Standard Usage
+
+The intended use is to quickly create a codec for a simple value object that wraps a primitive or another serializable type.
+
+```java
+// Assume UserID is a simple wrapper around a String
+// public record UserID(String value) {}
+
+// Obtain the base codec for String
+Codec<String> stringCodec = Codec.STRING;
+
+// Create an adapted codec for UserID
+Codec<UserID> userIdCodec = new FunctionCodec<>(
+    stringCodec,
+    UserID::new,      // The 'decode' function: String -> UserID
+    UserID::value     // The 'encode' function: UserID -> String
+);
+
+// This userIdCodec can now be registered and used throughout the system
+```
+
+### Anti-Patterns (Do NOT do this)
+
+-   **Null-Returning Functions:** The `decode` and `encode` functions must never return null. The implementation explicitly checks for and throws an `IllegalArgumentException` if a null is produced, leading to a runtime failure.
+-   **Stateful Transformations:** Avoid providing functions that rely on or modify external state. This violates the immutability and thread-safety contract of the codec system and can lead to unpredictable behavior.
+-   **Schema Mismatches:** The schema generated by this codec is the schema of the *wrapped* codec. The type transformation is invisible to the schema system. This can cause validation failures or confusion in systems that rely heavily on schema introspection.
+
+## Data Pipeline
+
+The FunctionCodec acts as a transformation step within the broader serialization and deserialization pipelines.
+
+> **Decode Flow:**
+> BsonValue -> `Inner Codec<T>.decode()` -> `T` -> `decode.apply(T)` -> **`R`**
+
+> **Encode Flow:**
+> `R` -> `encode.apply(R)` -> `T` -> `Inner Codec<T>.encode()` -> **BsonValue**
+
