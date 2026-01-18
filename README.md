@@ -10,7 +10,7 @@ This repository hosts a deep-dive architectural reference for the Hytale Server.
 The content in this repository is **AI-Generated**. It is produced by a custom Python pipeline that performs static analysis on the server bytecode and utilizes Large Language Models (LLMs) to synthesize architectural insights, data flow diagrams, and usage warnings. While the analysis is rigorous, users should verify critical details against the binary.
 
 ## 📖 Read the Documentation
-**[Click here to view the full documentation on GitBook]()**
+**[Click here to view the full documentation on GitBook](https://nicolasdegiovanni.gitbook.io/hytale-unofficial-server-internals/)**
 
 ## Scope & Features
 
